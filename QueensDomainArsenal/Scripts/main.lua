@@ -1,4 +1,4 @@
--- Combat prototype 0.2.1. Existing-gun modifier + independent sword-wave ability.
+-- Combat prototype 0.2.2. Existing-gun modifier + independent sword-wave ability.
 -- NOT new inventory weapons or replacement models. UE4SS 4.0.0 / UE4.27.
 local GUN='/Game/Items/Weapons/GunBase_WeaponScript.GunBase_WeaponScript_C'
 local WAVE='/Game/Items/Weapons/FlyingSwordTrue/HiddenSword_ArcProjectile.HiddenSword_ArcProjectile_C'
@@ -147,4 +147,4 @@ local ok,err=pcall(function()
     RegisterHook('/Script/Engine.PlayerController:ClientRestart',function() restore() end)
 end)
 if not ok then log('Respawn cleanup hook unavailable: '..tostring(err)) end
-log('Combat prototype 0.2.1 loaded. F6: current gun rapid-fire toggle. F7: wave. No new weapon items/models yet.')
+log('Combat prototype 0.2.2 loaded. F6: current gun rapid-fire toggle. F7: wave. No new weapon items/models yet.')

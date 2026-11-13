@@ -12,16 +12,47 @@ local function relevant(name)
     return false
 end
 local function inspect()
-    log('BEGIN v0.1')
+    log('BEGIN v0.2')
     local classType=StaticFindObject('/Script/CoreUObject.Class')
     if not valid(classType) then error('UClass type unavailable') end
     local classes, assets, seen = {}, {}, {}
+    local structures, valueCount = {}, 0
+    local function schema(p,depth)
+        if depth>2 or not p:GetFullName():find('StructProperty ',1,true) then return end
+        local st=p:GetStruct()
+        if not valid(st) then return end
+        local name=st:GetFullName()
+        log('    STRUCT TYPE '..name)
+        if structures[name] then return end
+        structures[name]=true
+        st:ForEachProperty(function(field)
+            log('    STRUCT FIELD '..field:GetFullName())
+            schema(field,depth+1)
+        end)
+    end
+    local function values(o)
+        if valueCount>=100 then return end
+        valueCount=valueCount+1
+        log('VALUES '..o:GetFullName())
+        for _,key in ipairs({'GunFireRate','PrimaryEnergyConsumption','SecondaryEnergyConsumption',
+            'MaxCharges','ChargeOverTime','AttackAnimSpeed','PrimaryAttackPower','SecondaryAttackPower',
+            'PrimaryAttackForce','SecondaryAttackForce','Damage','StartingVelocity','STartingVel',
+            'HitMultiplier','InitialSpeed','MaxSpeed','ProjectileGravityScale'}) do
+            local ok,value=pcall(function() return o[key] end)
+            if ok and value~=nil then
+                local t=type(value)
+                if t=='number' or t=='boolean' or t=='string' then
+                    log('  VALUE '..key..'='..tostring(value))
+                end
+            end
+        end
+    end
     local function addClass(c)
         if not valid(c) then return end
         local name=c:GetFullName()
         if seen[name] then return end
         seen[name]=true
-        if #classes<160 then classes[#classes+1]=c end
+        if #classes<400 then classes[#classes+1]=c end
     end
     -- Include the actual possessed pawn even if its name lacks a weapon keyword.
     for _,pc in ipairs(FindAllOf('PlayerController') or {}) do
@@ -45,7 +76,15 @@ local function inspect()
         local name=o:GetFullName()
         -- Restrict to game assets and game-style native types, not engine internals.
         local game=name:find('/Game/',1,true) or name:find('.FS_',1,true) or name:find('.FB_',1,true)
-        if not game or not relevant(name) then return end
+        if name:find('AnimBlueprintGeneratedClass ',1,true) or name:find('WidgetBlueprintGeneratedClass ',1,true)
+            or name:find('/StatusEffectVisualizers/',1,true) or name:find('/Game/UI/',1,true)
+            or name:find('/Game/Enemies/',1,true) then return end
+        if not game then return end
+        local c=o:GetClass()
+        local cn=valid(c) and c:GetFullName() or ''
+        if cn:find('FS_WeaponStats',1,true) or cn:find('FS_ThrowingWeaponStats',1,true)
+            or cn:find('ArcProjectile',1,true) then values(o) end
+        if not relevant(name) then return end
         if o:IsA(classType) then addClass(o)
         elseif #assets<200 and (name:find('DataTable ',1,true) or name:find('DataAsset ',1,true)) then
             assets[#assets+1]=name
@@ -57,25 +96,29 @@ local function inspect()
             log('CLASS '..c:GetFullName())
             local fields=0
             c:ForEachProperty(function(p)
-                fields=fields+1; log('  FIELD '..p:GetFullName())
-                if fields>=160 then log('  FIELD LIMIT'); return true end
+                fields=fields+1; log('  FIELD '..p:GetFullName()); schema(p,0)
+                if fields>=1500 then log('  FIELD LIMIT'); return true end
             end)
             local functions=0
             c:ForEachFunction(function(fn)
                 functions=functions+1; log('  FUNCTION '..fn:GetFullName())
                 local params=0
                 fn:ForEachProperty(function(p)
-                    params=params+1; log('    PARAM '..p:GetFullName())
-                    if params>=40 then return true end
+                    local n=p:GetFullName():match(':([^:]+)$') or ''
+                    -- Blueprint function fields include locals, not only parameters.
+                    if n:match('^CallFunc_') or n:match('^K2Node_') or n:match('^Temp_')
+                        or n:match('^K2Node') then return end
+                    params=params+1; log('    FNFIELD '..p:GetFullName()); schema(p,0)
+                    if params>=100 then return true end
                 end)
-                if functions>=160 then log('  FUNCTION LIMIT'); return true end
+                if functions>=1500 then log('  FUNCTION LIMIT'); return true end
             end)
         end)
         if not ok then log('CLASS INSPECTION ERROR '..tostring(err)) end
     end
     table.sort(assets)
     for _,name in ipairs(assets) do log('ASSET '..name) end
-    log('END classes='..#classes..' assets='..#assets..' (loaded objects only; limits 160/200)')
+    log('END classes='..#classes..' assets='..#assets..' (loaded objects only; limits 400/200)')
 end
 local function request()
     if busy then log('Inspection already queued/running'); return end
@@ -90,4 +133,4 @@ local function request()
     if not ok then busy=false; log('QUEUE ERROR '..tostring(err)) end
 end
 RegisterKeyBind(Key.F8,request)
-log('Loaded. Load a save, equip a weapon, then press F8 once. This is an API probe, not a weapon mod.')
+log('Loaded. Load a save, equip a weapon, then press F8 once. Probe v0.2: focused full weapon API and struct schemas; not a weapon mod.')

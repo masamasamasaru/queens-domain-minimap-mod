@@ -1,4 +1,4 @@
--- Experimental UE4SS 3.x HUD mod. No game assets are redistributed.
+-- Experimental UE4SS HUD mod, diagnostic build 0.2. No game assets are redistributed.
 local geometry = require('geometry')
 local config = {
     size = 240, margin = 24, radius = 6000, -- Unreal units; normally cm
@@ -12,6 +12,11 @@ local gray={R=0.3,G=0.35,B=0.4,A=0.65}
 local white={R=1,G=1,B=1,A=1}
 local function valid(o) return o and o:IsValid() end
 local function log(s) print('[QueensDomainMinimap] '..s..'\n') end
+local notes = {}
+local function note(key,message)
+    if not notes[key] then notes[key]=true; log(message) end
+end
+log('Build 0.2 loaded')
 local function reset() trail={}; previous=nil end
 local function line(canvas,x1,y1,x2,y2,color,width)
     canvas:K2_DrawLine({X=x1,Y=y1},{X=x2,Y=y2},width or 1,color)
@@ -19,14 +24,16 @@ end
 local function draw(context, sizeX, sizeY)
     if not enabled then return end
     local hud=context:get()
-    if not valid(hud) then return end
+    if not valid(hud) then note('hud','Skipped: invalid HUD'); return end
     local pc=hud:GetOwningPlayerController()
-    if not valid(pc) or not pc:IsLocalController() then return end
+    if not valid(pc) then note('pc','Skipped: no owning controller'); return end
+    if not pc:IsLocalController() then note('remote','Skipped: non-local controller'); return end
     local pawn=pc:K2_GetPawn()
     local canvas=hud.Canvas
-    if not valid(pawn) or not valid(canvas) then return end
+    if not valid(pawn) then note('pawn','Skipped: no pawn'); return end
+    if not valid(canvas) then note('canvas','Skipped: no Canvas in HUD callback'); return end
     local world=pawn:GetLevel()
-    if not valid(world) then return end
+    if not valid(world) then note('level','Skipped: no level'); return end
     local worldKey=world:GetAddress()
     if worldKey~=lastWorld then reset(); lastWorld=worldKey end
     local p=pawn:K2_GetActorLocation()
@@ -41,7 +48,7 @@ local function draw(context, sizeX, sizeY)
         if #trail>config.maxPoints then table.remove(trail,1) end
     end
     local sx,sy=sizeX:get(),sizeY:get()
-    if sx<160 or sy<160 then return end
+    if sx<160 or sy<160 then note('size','Skipped: viewport too small'); return end
     local size=math.min(config.size,sx-2*config.margin,sy-2*config.margin)
     local half=size/2
     local cx,cy=sx-config.margin-half,config.margin+half
@@ -79,16 +86,65 @@ local function draw(context, sizeX, sizeY)
     line(canvas,rx,ry,tx,ty,white,2)
     if not rendered then rendered=true; log('First HUD frame drawn.') end
 end
-local ok,err=pcall(function()
-    RegisterHook('/Script/Engine.HUD:ReceiveDrawHUD',function(context,sx,sy)
+local hooks = {}
+local function attach(path)
+    if hooks[path] then return end
+    local ok,pre,post=pcall(RegisterHook,path,function(context,sx,sy)
+        note('event:'..path,'HUD event received: '..path)
         local success,message=pcall(draw,context,sx,sy)
         if not success then
             errors=errors+1
             if errors<=3 then log('Draw error: '..tostring(message)) end
-            if errors>=3 then enabled=false; log('Disabled after repeated errors; inspect UE4SS.log.') end
+            if errors>=3 then enabled=false; note('disabled','Disabled after repeated errors') end
         end
     end)
+    if ok then
+        hooks[path]={pre,post}
+        log('HUD hook registered: '..path)
+    else log('HUD hook failed: '..path..': '..tostring(pre)) end
+end
+
+local function inspect()
+    local huds=FindAllOf('HUD') or {}
+    log('HUD inspection: '..#huds..' instances')
+    for _,hud in ipairs(huds) do
+        if valid(hud) then
+            log('HUD instance: '..hud:GetFullName())
+            log('HUD bShowHUD: '..tostring(hud.bShowHUD))
+            local class=hud:GetClass()
+            -- A Blueprint override is a separate UFunction from the engine event.
+            while valid(class) do
+                local name=class:GetFullName():match('^[^ ]+ (.+)$')
+                if name then
+                    local path=name..':ReceiveDrawHUD'
+                    local fn=StaticFindObject(path)
+                    if valid(fn) then attach(path) end
+                end
+                class=class:GetSuperStruct()
+            end
+        end
+    end
+    log('Draw completed: '..tostring(rendered))
+end
+
+local pending=false
+local function scheduleInspection()
+    if pending then return end
+    pending=true
+    ExecuteWithDelay(3000,function()
+        ExecuteInGameThread(function()
+            pending=false
+            local ok,err=pcall(inspect)
+            if not ok then log('Inspection error: '..tostring(err)) end
+        end)
+    end)
+end
+attach('/Script/Engine.HUD:ReceiveDrawHUD')
+local ok,err=pcall(function()
+    RegisterHook('/Script/Engine.PlayerController:ClientRestart',function()
+        scheduleInspection()
+    end)
 end)
-if ok then log('HUD hook registered. Waiting for gameplay HUD.')
-else log('HUD hook failed: '..tostring(err)) end
--- No background UObject access; rendering and sampling run in the HUD callback.
+if not ok then log('Restart hook failed: '..tostring(err)) end
+scheduleInspection()
+-- Async callbacks only queue work; UObject inspection runs on the game thread.

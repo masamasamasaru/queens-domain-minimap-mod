@@ -1,8 +1,11 @@
--- Combat prototype 0.1. Existing-gun modifier + independent sword-wave ability.
+-- Combat prototype 0.2. Existing-gun modifier + independent sword-wave ability.
 -- NOT new inventory weapons or replacement models. UE4SS 4.0.0 / UE4.27.
 local GUN='/Game/Items/Weapons/GunBase_WeaponScript.GunBase_WeaponScript_C'
 local WAVE='/Game/Items/Weapons/FlyingSwordTrue/HiddenSword_ArcProjectile.HiddenSword_ArcProjectile_C'
-local config={fireDelay=0.075,waveDamage=50,waveSpeed=4000,waveLifetime=3,waveCooldown=0.7}
+local storm=require('stormwave')
+local config={fireDelay=0.075,waveDamage=50,waveSpeed=4000,waveLifetime=3,waveCooldown=0.7,
+    waveWidthScale=3,waveHeightScale=1.6,waveHalfWidth=250,waveHalfHeight=90,
+    waveSplashDamage=25,waveSplashRadius=250}
 local gun, originalAuto, waveReady = nil, nil, true
 local hooked,handlers={},{}
 local function log(s) print('[QDArsenal] '..s..'\n') end
@@ -110,6 +113,7 @@ local function fireWave()
         movement.Velocity=velocity
         movement.ProjectileGravityScale=0
         projectile:SetLifeSpan(config.waveLifetime)
+        storm.attach(projectile,p,rot,velocity,config)
     end)
     if not ok then
         if valid(projectile) then pcall(function() projectile:K2_DestroyActor() end) end
@@ -117,7 +121,7 @@ local function fireWave()
     end
     waveReady=false
     ExecuteWithDelay(math.floor(config.waveCooldown*1000),function() waveReady=true end)
-    log('Wave spawned; damage='..config.waveDamage..' (hit behaviour needs in-game validation)')
+    log('Storm wave spawned; damage='..config.waveDamage..' (storm collision/FX need in-game validation)')
 end
 local function onGameThread(fn)
     ExecuteInGameThread(function()
@@ -132,4 +136,4 @@ local ok,err=pcall(function()
     RegisterHook('/Script/Engine.PlayerController:ClientRestart',function() restore() end)
 end)
 if not ok then log('Respawn cleanup hook unavailable: '..tostring(err)) end
-log('Combat prototype 0.1 loaded. F6: current gun rapid-fire toggle. F7: wave. No new weapon items/models yet.')
+log('Combat prototype 0.2 loaded. F6: current gun rapid-fire toggle. F7: wave. No new weapon items/models yet.')

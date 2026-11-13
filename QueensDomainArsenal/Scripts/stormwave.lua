@@ -1,4 +1,4 @@
--- Storm wave 0.2. Own swept collision/damage so enemy impact cannot destroy the wave.
+-- Storm wave 0.2.1. Own swept collision/damage so enemy impact cannot destroy the wave.
 local M={}
 local waves,pending={},false
 local warned={}
@@ -196,7 +196,7 @@ function M.attach(actor,owner,rotation,velocity,config)
     actor.ProjectileMovement:SetComponentTickEnabled(false)
     actor.ProjectileMovement:StopMovementImmediately()
     for _,name in ipairs({'TickRate','TickLast','Damage Trace','UpdateCollision'}) do sys:K2_ClearTimer(actor,name) end
-    actor:K2_SetActorScale3D({X=1,Y=config.waveWidthScale,Z=config.waveHeightScale})
+    actor:SetActorScale3D({X=1,Y=config.waveWidthScale,Z=config.waveHeightScale})
     local queries,seen={},{}
     local function add(q) if type(q)=='number' and q>0 and not seen[q] then seen[q]=true;queries[#queries+1]=q end end
     -- Use the game's attack object channels plus world geometry for wall occlusion.
@@ -204,10 +204,12 @@ function M.attach(actor,owner,rotation,velocity,config)
     if channels then for i=1,#channels do add(channels[i]) end end
     add(1);add(2);add(3)
     local now=gs:GetTimeSeconds(owner)
+    local fxOk,fx=pcall(resolveEffects)
+    if not fxOk then warn('fxlookup','Storm FX lookup error: '..tostring(fx));fx={} end
     local s={actor=actor,owner=owner,rotation=rotation,velocity=velocity,config=config,
         sys=sys,gs=gs,damageInterface=damageInterface,queries=queries,
         pos=copy(actor:K2_GetActorLocation()),created=now,lastTime=now,
-        half={X=25,Y=config.waveHalfWidth,Z=config.waveHalfHeight},direct={},splash={},fx=resolveEffects()}
+        half={X=25,Y=config.waveHalfWidth,Z=config.waveHalfHeight},direct={},splash={},fx=fx}
     spawnFX(s.fx.lightning,s,s.pos,true)
     waves[#waves+1]=s
     schedule()

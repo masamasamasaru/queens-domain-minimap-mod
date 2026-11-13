@@ -1,4 +1,4 @@
--- Storm wave 0.2.1. Own swept collision/damage so enemy impact cannot destroy the wave.
+-- Storm wave 0.2.2. Own swept collision/damage so enemy impact cannot destroy the wave.
 local M={}
 local waves,pending={},false
 local warned={}
@@ -87,6 +87,9 @@ local function spawnFX(asset,s,position,attached)
     if not ok then warn('fx:'..tostring(attached),'Storm FX error: '..tostring(err)) end
 end
 local function destroy(s)
+    if s.done then return end
+    s.done=true
+    log('Storm wave ended: traces='..s.traceCount..'; contacts='..s.contactCount..'; damage calls='..s.damageCount..'; accepted='..s.acceptedCount)
     if valid(s.lightning) then pcall(function() s.lightning:Deactivate();s.lightning:K2_DestroyComponent(s.actor) end) end
     if valid(s.actor) then pcall(function() s.actor:K2_DestroyActor() end) end
 end
@@ -107,6 +110,8 @@ local function apply(s,target,hit,amount)
     end)
     s.actor.Damage.DamageAmount=old
     if not ok then error('TryApplyDamage: '..tostring(success)) end
+    s.damageCount=s.damageCount+1
+    if success==true then s.acceptedCount=s.acceptedCount+1 end
     return success==true
 end
 local color={R=0,G=0,B=0,A=0}
@@ -118,7 +123,17 @@ local function trace(s,a,b,radius)
     else
         s.sys:BoxTraceMultiForObjects(s.owner,a,b,s.half,s.rotation,s.queries,false,ignore,0,hits,true,color,color,0)
     end
-    return hits
+    -- UE4SS 4.0.0 returns each OutHits element as LocalUnrealParam, not FHitResult.
+    -- Unwrap BEFORE sorting, reading Actor/Component, or passing it to a damage call.
+    local resolved={}
+    for _,raw in ipairs(hits) do
+        local h=obj(raw)
+        if not h or type(h.Time)~='number' then error('Unexpected trace hit format after get()') end
+        resolved[#resolved+1]=h
+    end
+    s.traceCount=s.traceCount+1
+    s.contactCount=s.contactCount+#resolved
+    return resolved
 end
 local function explode(s,hit,directKey)
     spawnFX(s.fx.explosion,s,copy(hit.ImpactPoint),false)
@@ -129,7 +144,7 @@ local function explode(s,hit,directKey)
             local key=valid(actor) and actor:GetAddress() or t:GetAddress()
             if key~=directKey and not s.direct[key] and not s.splash[key] then
                 local obstruction={}
-                local wall=s.sys:LineTraceSingleForObjects(s.owner,copy(hit.ImpactPoint),copy(h.ImpactPoint),{1},false,{s.owner,s.actor},0,obstruction,true,color,color,0)
+                local wall=s.sys:LineTraceSingleForObjects(s.owner,copy(hit.ImpactPoint),copy(h.ImpactPoint),{0},false,{s.owner,s.actor},0,obstruction,true,color,color,0)
                 if not wall then
                 s.splash[key]=true
                 -- Splash does not cause another explosion. At most once per target per wave.
@@ -198,18 +213,20 @@ function M.attach(actor,owner,rotation,velocity,config)
     for _,name in ipairs({'TickRate','TickLast','Damage Trace','UpdateCollision'}) do sys:K2_ClearTimer(actor,name) end
     actor:SetActorScale3D({X=1,Y=config.waveWidthScale,Z=config.waveHeightScale})
     local queries,seen={},{}
-    local function add(q) if type(q)=='number' and q>0 and not seen[q] then seen[q]=true;queries[#queries+1]=q end end
+    local function add(q) if type(q)=='number' and q>=0 and q<32 and not seen[q] then seen[q]=true;queries[#queries+1]=q end end
     -- Use the game's attack object channels plus world geometry for wall occlusion.
     local channels=owner.AttackObjectChannel
-    if channels then for i=1,#channels do add(channels[i]) end end
-    add(1);add(2);add(3)
+    if channels then for i=1,#channels do add(obj(channels[i])) end end
+    -- EObjectTypeQuery enumerators are ZERO-based: WorldStatic=0, WorldDynamic=1, Pawn=2.
+    add(0);add(1);add(2)
+    warn('queries','Storm trace object types (zero-based): '..table.concat(queries,','))
     local now=gs:GetTimeSeconds(owner)
     local fxOk,fx=pcall(resolveEffects)
     if not fxOk then warn('fxlookup','Storm FX lookup error: '..tostring(fx));fx={} end
     local s={actor=actor,owner=owner,rotation=rotation,velocity=velocity,config=config,
         sys=sys,gs=gs,damageInterface=damageInterface,queries=queries,
         pos=copy(actor:K2_GetActorLocation()),created=now,lastTime=now,
-        half={X=25,Y=config.waveHalfWidth,Z=config.waveHalfHeight},direct={},splash={},fx=fx}
+        half={X=25,Y=config.waveHalfWidth,Z=config.waveHalfHeight},direct={},splash={},fx=fx,traceCount=0,contactCount=0,damageCount=0,acceptedCount=0}
     spawnFX(s.fx.lightning,s,s.pos,true)
     waves[#waves+1]=s
     schedule()

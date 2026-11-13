@@ -1,8 +1,24 @@
-# QueensDomain Arsenal — 攻撃動作試作 0.2.1
+# QueensDomain Arsenal — 攻撃動作試作 0.2.2
 
 **新規武器2本の完成版ではありません。新しい装備アイテムやモデルはまだ追加していません。**
 実機ログで確認した武器APIを使い、既存銃の無限連射と光波発射を試す段階です。
 UE4SS 4.0.0 / QueensDomain UE4.27向け。0.1の連射と光波はユーザーの実機で動作確認済みです。0.2で追加する幅拡大・稲妻・爆発・貫通処理は実機未確認です。
+
+## 0.2.2：命中結果の読み取りと判定対象の修正
+
+0.2.1の実機ログではエフェクト取得と光波生成は成功していましたが、ダメージ適用ログがありませんでした。コードを確認し、次の不備を修正しました。
+
+- UE4SS 4.0.0のトレース関数はOutHitsの各要素を `LocalUnrealParam` で返します。各要素を `get()` で取り出してから、並べ替え・敵判定・ダメージ適用を行います。
+- `EObjectTypeQuery` の値は0始まりです。0を除外していた設定を修正し、ゲームの攻撃対象設定に加えてWorldStatic=0、WorldDynamic=1、Pawn=2を使用します。爆風の静的な壁判定も0へ修正しました。
+- 光波終了時のログに `traces`（判定回数）、`contacts`（接触件数）、`damage calls`（適用呼び出し回数）、`accepted`（成功回数）を記録します。接触件数には同じ敵・壁などへの繰り返し接触も含まれます。
+
+最新ZIPからmain.luaとstormwave.luaを両方上書きしてください。mods.txtはそのままで構いません。起動ログは `Combat prototype 0.2.2 loaded` になります。
+
+UE4SSと同じラッパー形式を使う回帰テストで、修正前の失敗と修正後の複数敵への直撃・爆風ダメージを確認しました。実ゲームでの敵検出・ダメージ適用は未確認です。F7で敵を狙い、HPが減るか確認してください。減らない場合は新しいUE4SS.logを添付してください。
+
+開発用テストは `tests/test_stormwave.py` です（Pythonとlupaが必要）。リポジトリのルートで `python tests/test_stormwave.py` を実行できます。ゲームへ導入する必要はありません。
+
+UE4SS側の配列要素変換の参照：[v4.0.0 LuaUObject.cpp](https://github.com/UE4SS-RE/RE-UE4SS/blob/v4.0.0/UE4SS/src/LuaType/LuaUObject.cpp)。
 
 ## 0.2.1：光波が消える不具合の修正
 
@@ -91,7 +107,7 @@ F7でゲーム内にある`HiddenSword_ArcProjectile`を生成します。クラ
 
 ## 結果を確認する
 
-起動時の`[QDArsenal] Combat prototype 0.2.1 loaded`を確認してください。
+起動時の`[QDArsenal] Combat prototype 0.2.2 loaded`を確認してください。
 その後、F6と通常攻撃、F7をそれぞれ試し、結果と新しい`UE4SS.log`を開発チャットへ送ってください。
 
 確認したい項目：

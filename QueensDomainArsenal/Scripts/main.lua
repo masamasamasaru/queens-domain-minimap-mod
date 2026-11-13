@@ -1,4 +1,4 @@
--- Combat prototype 0.2. Existing-gun modifier + independent sword-wave ability.
+-- Combat prototype 0.2.1. Existing-gun modifier + independent sword-wave ability.
 -- NOT new inventory weapons or replacement models. UE4SS 4.0.0 / UE4.27.
 local GUN='/Game/Items/Weapons/GunBase_WeaponScript.GunBase_WeaponScript_C'
 local WAVE='/Game/Items/Weapons/FlyingSwordTrue/HiddenSword_ArcProjectile.HiddenSword_ArcProjectile_C'
@@ -97,7 +97,7 @@ local function fireWave()
     local gs=StaticFindObject('/Script/Engine.Default__GameplayStatics')
     if not valid(gs) then log('GameplayStatics unavailable'); return end
     local projectile
-    local ok,err=pcall(function()
+    local function spawnBase()
         -- Set damage/velocity before BeginPlay; do not modify the shared class default.
         -- Enum 2 = AdjustIfPossibleButDontSpawnIfColliding (avoid spawning inside walls).
         projectile=gs:BeginDeferredActorSpawnFromClass(p,class,transform,2,p)
@@ -113,7 +113,17 @@ local function fireWave()
         movement.Velocity=velocity
         movement.ProjectileGravityScale=0
         projectile:SetLifeSpan(config.waveLifetime)
-        storm.attach(projectile,p,rot,velocity,config)
+    end
+    local enhanced=false
+    local ok,err=pcall(function()
+        spawnBase()
+        local success,message=pcall(storm.attach,projectile,p,rot,velocity,config)
+        if success then enhanced=true;return end
+        log('Storm setup error: '..tostring(message)..'; recreating basic wave')
+        -- A partially modified projectile is not reusable: replace it with a fresh base wave.
+        if valid(projectile) then projectile:K2_DestroyActor() end
+        projectile=nil
+        spawnBase()
     end)
     if not ok then
         if valid(projectile) then pcall(function() projectile:K2_DestroyActor() end) end
@@ -121,7 +131,8 @@ local function fireWave()
     end
     waveReady=false
     ExecuteWithDelay(math.floor(config.waveCooldown*1000),function() waveReady=true end)
-    log('Storm wave spawned; damage='..config.waveDamage..' (storm collision/FX need in-game validation)')
+    if enhanced then log('Storm wave spawned; damage='..config.waveDamage)
+    else log('Basic wave fallback spawned; storm features unavailable for this shot') end
 end
 local function onGameThread(fn)
     ExecuteInGameThread(function()
@@ -136,4 +147,4 @@ local ok,err=pcall(function()
     RegisterHook('/Script/Engine.PlayerController:ClientRestart',function() restore() end)
 end)
 if not ok then log('Respawn cleanup hook unavailable: '..tostring(err)) end
-log('Combat prototype 0.2 loaded. F6: current gun rapid-fire toggle. F7: wave. No new weapon items/models yet.')
+log('Combat prototype 0.2.1 loaded. F6: current gun rapid-fire toggle. F7: wave. No new weapon items/models yet.')
